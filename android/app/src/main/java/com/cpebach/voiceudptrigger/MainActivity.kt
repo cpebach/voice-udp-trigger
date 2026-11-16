@@ -74,10 +74,15 @@ class MainActivity : Activity() {
 
     private fun prepareAndStart() {
         if (!saveConfig()) return
-        val needed = mutableListOf(Manifest.permission.RECORD_AUDIO)
-        if (Build.VERSION.SDK_INT >= 33) needed += Manifest.permission.POST_NOTIFICATIONS
-        val missing = needed.filter {
-            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        // 必須はマイクのみ。通知(Android13+)が無くても聞けるだけなら動く
+        val missing = mutableListOf<String>()
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missing += Manifest.permission.RECORD_AUDIO
+        }
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            missing += Manifest.permission.POST_NOTIFICATIONS
         }
         if (missing.isNotEmpty()) {
             requestPermissions(missing.toTypedArray(), REQ_PERM)
@@ -93,10 +98,19 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_PERM) return
-        if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-            startTrigger()
-        } else {
+        var micDenied = false
+        permissions.forEachIndexed { i, p ->
+            if (p == Manifest.permission.RECORD_AUDIO &&
+                grantResults.getOrNull(i) != PackageManager.PERMISSION_GRANTED
+            ) {
+                micDenied = true
+            }
+        }
+        if (micDenied) {
             Toast.makeText(this, "マイクの許可がないと聞けません", Toast.LENGTH_LONG).show()
+        } else {
+            // 通知が断られても開始する(通知は出ないが動作はする)
+            startTrigger()
         }
     }
 

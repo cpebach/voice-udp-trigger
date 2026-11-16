@@ -37,6 +37,14 @@ class TriggerService : Service(), RecognitionListener {
 
         @Volatile
         var status = "停止中"
+
+        // エラー時は停止中に上書きしないためのフラグ
+        @Volatile
+        private var failed = false
+
+        fun resetError() {
+            failed = false
+        }
     }
 
     private var model: Model? = null
@@ -61,6 +69,7 @@ class TriggerService : Service(), RecognitionListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        resetError()
         val prefs = getSharedPreferences("config", Context.MODE_PRIVATE)
         targetHost = prefs.getString("host", "") ?: ""
         targetPort = prefs.getInt("port", 5000)
@@ -85,7 +94,8 @@ class TriggerService : Service(), RecognitionListener {
                 setStatus("聞いている… 「$keyword」 → $targetHost:$targetPort")
             } catch (e: Exception) {
                 Log.e("TriggerService", "初期化に失敗", e)
-                setStatus("エラー: ${e.message}")
+                failed = true
+                setStatus("初期化エラー: ${e.javaClass.simpleName}: ${e.message}")
                 stopSelf()
             }
         }
@@ -159,22 +169,38 @@ class TriggerService : Service(), RecognitionListener {
     }
 
     private fun showNotification(text: String) {
-        val notif = Notification.Builder(this, CHANNEL_ID)
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setPriority(Notification.PRIORITY_LOW)
+                .setShowWhen(false)
+        }
+        val notif = builder
             .setContentTitle("Voice UDP Trigger")
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_mic)
             .setOngoing(true)
             .build()
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else {
-            startForeground(NOTIF_ID, notif)
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, notif)
+            }
+        } catch (e: Exception) {
+            // 権限・OS制限でフォアグラウンド化に失敗しても原因を残す
+            Log.e("TriggerService", "startForeground失敗", e)
+            failed = true
+            status = "起動失敗: ${e.javaClass.simpleName}: ${e.message}"
+            stopSelf()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        status = "停止中"
+        if (!failed) status = "停止中"
         try {
             speechService?.stop()
         } catch (_: Exception) {
