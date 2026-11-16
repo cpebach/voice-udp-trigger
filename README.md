@@ -64,6 +64,13 @@ gradle assembleDebug
 要: JDK 17 / Android SDK (platform-34, build-tools 34.0.0)。
 音声モデル `vosk-model-small-ja-0.22` を `app/src/main/assets/model/` に展開して同梱(このディレクトリはgitignore済み)。
 
+**重要**: `app/src/main/assets/model/uuid` に識別子ファイルが必要(無いと起動時に
+`FileNotFoundException: model/uuid` で失敗する)。中身は任意のUUID文字列でOK:
+
+```bash
+python -c "import uuid; open('android/app/src/main/assets/model/uuid','w').write(str(uuid.uuid4()))"
+```
+
 ### インストール
 
 `app-debug.apk` を転送してインストール(提供元不明アプリの許可が必要)。
