@@ -1,0 +1,12 @@
+{
+  "target_host": "192.168.1.100",
+  "target_port": 5000,
+  "encoding": "utf-8",
+  "model_path": "model",
+  "device": null,
+  "cooldown_seconds": 2.0,
+  "triggers": {
+    "コンピューター": "POWER ON",
+    "停止": "POWER OFF"
+  }
+}
