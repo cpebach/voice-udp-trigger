@@ -48,6 +48,27 @@ python -c "import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM); s.b
 
 アプリを起動して `triggers` に書いたキーワードを発話し、届けばOK。
 
+## 📱 Android版
+
+`android/` にKotlin版アプリがある。フォアグラウンドサービスで継続聞き取りし、
+キーワード検出でUDP送信(設定は画面から入力、2秒クールダウン)。
+
+### ビルド
+
+```bash
+cd android
+gradle assembleDebug
+# 出力: app/build/outputs/apk/debug/app-debug.apk (音声モデル同梱で約117MB)
+```
+
+要: JDK 17 / Android SDK (platform-34, build-tools 34.0.0)。
+音声モデル `vosk-model-small-ja-0.22` を `app/src/main/assets/model/` に展開して同梱(このディレクトリはgitignore済み)。
+
+### インストール
+
+`app-debug.apk` を転送してインストール(提供元不明アプリの許可が必要)。
+初回起動時にマイクと通知の権限を許可 → IP/ポート/キーワード/メッセージを入力 → 開始。
+
 ## 仕組み
 
 1. マイクから 16kHz モノラルで音声を取り込み
