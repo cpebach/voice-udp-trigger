@@ -10,20 +10,26 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var hostInput: EditText
     private lateinit var portInput: EditText
-    private lateinit var keywordInput: EditText
-    private lateinit var messageInput: EditText
+    private lateinit var triggerList: LinearLayout
     private lateinit var statusText: TextView
     private val handler = Handler(Looper.getMainLooper())
+
+    private class TriggerRow(val keyword: EditText, val message: EditText, val container: LinearLayout)
+    private val rows = mutableListOf<TriggerRow>()
 
     private val poll = object : Runnable {
         override fun run() {
@@ -39,35 +45,97 @@ class MainActivity : Activity() {
 
         hostInput = findViewById(R.id.host)
         portInput = findViewById(R.id.port)
-        keywordInput = findViewById(R.id.keyword)
-        messageInput = findViewById(R.id.message)
+        triggerList = findViewById(R.id.trigger_list)
         statusText = findViewById(R.id.status)
 
         hostInput.setText(prefs.getString("host", "192.168.1.100"))
         portInput.setText(prefs.getInt("port", 5000).toString())
-        keywordInput.setText(prefs.getString("keyword", "コンピューター"))
-        messageInput.setText(prefs.getString("message", "POWER ON"))
+        for ((k, m) in loadTriggers()) addRow(k, m)
 
+        findViewById<Button>(R.id.add_trigger).setOnClickListener { addRow("", "") }
         findViewById<Button>(R.id.start).setOnClickListener { prepareAndStart() }
         findViewById<Button>(R.id.stop).setOnClickListener {
             stopService(Intent(this, TriggerService::class.java))
         }
     }
 
+    // v1.3: triggers(JSON配列)。v1.2まで: keyword/message単一 → 変換して引き継ぐ
+    private fun loadTriggers(): List<Pair<String, String>> {
+        val json = prefs.getString("triggers", null)
+        if (json != null) {
+            val list = mutableListOf<Pair<String, String>>()
+            try {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val k = o.optString("keyword")
+                    if (k.isNotEmpty()) list += k to o.optString("message")
+                }
+            } catch (_: Exception) {
+            }
+            return list
+        }
+        val k = prefs.getString("keyword", "コンピューター").orEmpty()
+        val m = prefs.getString("message", "POWER ON").orEmpty()
+        return if (k.isEmpty()) emptyList() else listOf(k to m)
+    }
+
+    private fun addRow(keyword: String, message: String) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val kw = EditText(this).apply {
+            hint = "キーワード"
+            setText(keyword)
+            isSingleLine = true
+            if (Build.VERSION.SDK_INT >= 26) importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        val msg = EditText(this).apply {
+            hint = "送るメッセージ"
+            setText(message)
+            isSingleLine = true
+            if (Build.VERSION.SDK_INT >= 26) importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        kw.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        msg.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        val del = Button(this).apply { text = "✕" }
+        val rowRef = TriggerRow(kw, msg, row)
+        del.setOnClickListener {
+            triggerList.removeView(row)
+            rows.remove(rowRef)
+        }
+        row.addView(kw)
+        row.addView(msg)
+        row.addView(del)
+        triggerList.addView(row)
+        rows += rowRef
+    }
+
     private fun saveConfig(): Boolean {
         val host = hostInput.text.toString().trim()
         val port = portInput.text.toString().toIntOrNull()
-        val keyword = keywordInput.text.toString().trim()
-        val message = messageInput.text.toString()
-        if (host.isEmpty() || port == null || port !in 1..65535 || keyword.isEmpty()) {
-            Toast.makeText(this, "IP・ポート(1-65535)・キーワードを入力して", Toast.LENGTH_LONG).show()
+        if (host.isEmpty() || port == null || port !in 1..65535) {
+            Toast.makeText(this, "IP・ポート(1-65535)を入力して", Toast.LENGTH_LONG).show()
+            return false
+        }
+        val arr = JSONArray()
+        for (r in rows) {
+            val k = r.keyword.text.toString().trim()
+            if (k.isEmpty()) continue
+            arr.put(JSONObject().put("keyword", k).put("message", r.message.text.toString()))
+        }
+        if (arr.length() == 0) {
+            Toast.makeText(this, "キーワードを1つ以上登録して", Toast.LENGTH_LONG).show()
             return false
         }
         prefs.edit()
             .putString("host", host)
             .putInt("port", port)
-            .putString("keyword", keyword)
-            .putString("message", message)
+            .putString("triggers", arr.toString())
             .apply()
         return true
     }

@@ -13,6 +13,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
@@ -53,10 +54,11 @@ class TriggerService : Service(), RecognitionListener {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var lastFired = 0L
 
+    private data class Trigger(val keyword: String, val message: String)
+
     private var targetHost = ""
     private var targetPort = 5000
-    private var keyword = ""
-    private var message = ""
+    private var triggers: List<Trigger> = emptyList()
 
     override fun onCreate() {
         super.onCreate()
@@ -73,8 +75,7 @@ class TriggerService : Service(), RecognitionListener {
         val prefs = getSharedPreferences("config", Context.MODE_PRIVATE)
         targetHost = prefs.getString("host", "") ?: ""
         targetPort = prefs.getInt("port", 5000)
-        keyword = prefs.getString("keyword", "") ?: ""
-        message = prefs.getString("message", "") ?: ""
+        triggers = parseTriggers(prefs)
 
         showNotification("モデル読み込み中…")
         setStatus("モデル読み込み中…")
@@ -91,7 +92,12 @@ class TriggerService : Service(), RecognitionListener {
                 val svc = SpeechService(Recognizer(m, 16000.0f), 16000.0f)
                 speechService = svc
                 svc.startListening(this@TriggerService)
-                setStatus("聞いている… 「$keyword」 → $targetHost:$targetPort")
+                val label = when {
+                    triggers.isEmpty() -> "⚠ トリガー未設定"
+                    triggers.size == 1 -> "「${triggers[0].keyword}」"
+                    else -> "${triggers.size}件のトリガー"
+                }
+                setStatus("聞いている… $label → $targetHost:$targetPort")
             } catch (e: Exception) {
                 Log.e("TriggerService", "初期化に失敗", e)
                 failed = true
@@ -112,11 +118,13 @@ class TriggerService : Service(), RecognitionListener {
         val text = parseText(hypothesis)
         if (text.isNotEmpty()) {
             val now = System.currentTimeMillis()
-            if (keyword.isNotEmpty() && text.contains(keyword, ignoreCase = true) &&
-                now - lastFired >= COOLDOWN_MS
-            ) {
+            // 登録順に走査し、最初に一致したトリガーのメッセージを送る
+            val hit = triggers.firstOrNull {
+                it.keyword.isNotEmpty() && text.contains(it.keyword, ignoreCase = true)
+            }
+            if (hit != null && now - lastFired >= COOLDOWN_MS) {
                 lastFired = now
-                fireUdp(text)
+                fireUdp(hit.message, text)
             } else {
                 setStatus("聞いた: $text")
             }
@@ -145,7 +153,29 @@ class TriggerService : Service(), RecognitionListener {
         ""
     }
 
-    private fun fireUdp(heard: String) {
+    // v1.3: triggers(JSON配列)。v1.2までの keyword/message 単一設定も引き継ぐ
+    private fun parseTriggers(prefs: android.content.SharedPreferences): List<Trigger> {
+        val json = prefs.getString("triggers", null)
+        if (json != null) {
+            val list = mutableListOf<Trigger>()
+            try {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val k = o.optString("keyword")
+                    if (k.isNotEmpty()) list += Trigger(k, o.optString("message"))
+                }
+            } catch (e: Exception) {
+                Log.e("TriggerService", "triggers解析失敗", e)
+            }
+            return list
+        }
+        val k = prefs.getString("keyword", "").orEmpty()
+        val m = prefs.getString("message", "").orEmpty()
+        return if (k.isEmpty()) emptyList() else listOf(Trigger(k, m))
+    }
+
+    private fun fireUdp(message: String, heard: String) {
         setStatus("送信: 「$message」 → $targetHost:$targetPort")
         showNotification("検出「$heard」送信済み")
         thread {

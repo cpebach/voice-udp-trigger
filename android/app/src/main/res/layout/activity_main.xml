@@ -26,19 +26,24 @@
             android:maxLength="5"
             android:importantForAutofill="no" />
 
-        <EditText
-            android:id="@+id/keyword"
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="キーワード(検出で発火)"
-            android:importantForAutofill="no" />
+            android:paddingTop="8dp"
+            android:text="キーワード → 送るメッセージ(複数登録可)"
+            android:textStyle="bold" />
 
-        <EditText
-            android:id="@+id/message"
+        <LinearLayout
+            android:id="@+id/trigger_list"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="UDPで送るメッセージ"
-            android:importantForAutofill="no" />
+            android:orientation="vertical" />
+
+        <Button
+            android:id="@+id/add_trigger"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="＋ トリガーを追加" />
 
         <LinearLayout
             android:layout_width="match_parent"
